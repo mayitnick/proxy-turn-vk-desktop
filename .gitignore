@@ -55,3 +55,13 @@ wg-turn-client
 .kotlin/
 .keys/
 .gradle-home/
+
+# ===== Secrets & Sensitive Client Configs =====
+portable_client/config.ini
+portable_client/wg-turn.conf
+portable_client/vk_profile.json
+portable_client/captcha_browser_fp
+*.exe
+*.exe~
+*.zip
+

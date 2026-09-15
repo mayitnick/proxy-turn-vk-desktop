@@ -13,7 +13,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/cbeuw/connutil"
 	"github.com/pion/dtls/v3"
 	"github.com/pion/dtls/v3/pkg/crypto/selfsign"
 	"github.com/pion/logging"
@@ -178,6 +177,9 @@ func RunSession(
 	if len(creds.TurnURLs) == 0 {
 		return false, fmt.Errorf("нет TURN URL в учетных данных")
 	}
+	for _, u := range creds.TurnURLs {
+		RegisterDiscoveredTurnAddr(u)
+	}
 	selectedURL := creds.TurnURLs[sessionID%len(creds.TurnURLs)]
 
 	urlhost, urlport, err := net.SplitHostPort(selectedURL)
@@ -314,7 +316,7 @@ func RunSession(
 		log.Printf("[ВОРКЕР #%d] [ПРЯМОЙ] Без DTLS, только RTP-obfs AEAD ✓", sessionID)
 	} else {
 		// ─── Классический режим: DTLS поверх RTP-obfs (обратная совместимость) ───
-		pipeA, pipeB := connutil.AsyncPacketPipe()
+		pipeA, pipeB := AsyncPacketPipe()
 		defer pipeA.Close()
 		defer pipeB.Close()
 
@@ -775,7 +777,7 @@ func RunPing(
 	}
 	defer relay.Close()
 
-	pipeA, pipeB := connutil.AsyncPacketPipe()
+	pipeA, pipeB := AsyncPacketPipe()
 	defer pipeA.Close()
 	defer pipeB.Close()
 

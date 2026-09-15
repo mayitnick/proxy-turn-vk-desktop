@@ -1,5 +1,5 @@
-//go:build !windows
-// +build !windows
+//go:build windows
+// +build windows
 
 package main
 
@@ -9,14 +9,13 @@ import (
 	"syscall"
 )
 
-// listenUDP binds a UDP socket with SO_REUSEADDR so a quick restart can reclaim
-// 127.0.0.1:port after the previous client process exits.
+// listenUDP binds a UDP socket with SO_REUSEADDR on Windows
 func listenUDP(addr string) (net.PacketConn, error) {
 	lc := net.ListenConfig{
 		Control: func(network, address string, c syscall.RawConn) error {
 			var setErr error
 			if err := c.Control(func(fd uintptr) {
-				setErr = syscall.SetsockoptInt(int(fd), syscall.SOL_SOCKET, syscall.SO_REUSEADDR, 1)
+				setErr = syscall.SetsockoptInt(syscall.Handle(fd), syscall.SOL_SOCKET, syscall.SO_REUSEADDR, 1)
 			}); err != nil {
 				return err
 			}

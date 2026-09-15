@@ -400,32 +400,15 @@ func main() {
 				fmt.Printf("║ %-40s ║\n", fmt.Sprintf("MTU = %s", mtuStr))
 				fmt.Println("╚══════════════════════════════════════╝")
 
-				if *tunFdSock == "" {
-					log.Println("[RAW] Ошибка: -tun-fd-sock не указан")
+				cleanup, err := setupPlatformTUN(ctx, disp, *tunFdSock, ip, dnsCSV, mtuStr, *peerAddr, tp.Hashes)
+				if err != nil {
+					log.Printf("[RAW] Ошибка настройки TUN: %v", err)
 					return
 				}
-
-				log.Println("[RAW] Ожидание TUN fd от Android...")
-				var tunFile *os.File
-				var fdErr error
-				attempt := 0
-				for {
-					attempt++
-					tunFile, fdErr = recvTunFD(*tunFdSock)
-					if fdErr == nil {
-						break
-					}
-					rawDiagf("recvTunFD попытка #%d неудачна: %v (повтор через 200мс)", attempt, fdErr)
-					select {
-					case <-ctx.Done():
-						rawDiagf("recvTunFD: ctx отменён, прекращаю попытки")
-						return
-					case <-time.After(200 * time.Millisecond):
-					}
+				if cleanup != nil {
+					defer cleanup()
 				}
-				rawDiagf("recvTunFD успешен на попытке #%d, fd=%v", attempt, tunFile.Fd())
-				disp.AttachTUN(tunFile)
-				log.Println("[RAW] TUN подключён, трафик пошёл")
+				<-ctx.Done()
 				return
 			}
 
@@ -463,6 +446,15 @@ func main() {
 				if err := runSocks5Server(ctx, *socksAddr, tnet, *socksAuth, *socksUser, *socksPass); err != nil {
 					log.Printf("[SOCKS] Сервер остановлен: %v", err)
 				}
+			} else if activeConnMode == "vpn" {
+				cleanup, err := startWindowsWireGuardTUN(ctx, finalConf, *peerAddr)
+				if err != nil {
+					log.Printf("[VPN] Ошибка запуска WinTUN WireGuard: %v", err)
+				} else if cleanup != nil {
+					defer cleanup()
+				}
+				<-ctx.Done()
+				return
 			}
 		case <-ctx.Done():
 		}
