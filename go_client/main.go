@@ -1,4 +1,4 @@
-package main
+package clientengine
 
 import (
 	"bufio"
@@ -106,7 +106,7 @@ func sanitizeHashCheckMessage(message string) string {
 	return message
 }
 
-func main() {
+func RunCLI() {
 	log.SetFlags(log.Ldate | log.Ltime | log.Lmicroseconds)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -185,8 +185,40 @@ func main() {
 	noDTLS := flag.Bool("notls", false, "прямой режим: RTP-obfs AEAD без DTLS поверх TURN (нужен сервер с -listen-direct)")
 	turnTCP := flag.Bool("turn-tcp", false, "соединяться с TURN-relay по TCP вместо UDP (обход UDP-душения на некоторых сетях, напр. Ростелеком)")
 	tunFdSock := flag.String("tun-fd-sock", "", "unix-сокет для получения TUN fd от Android (только -mode rawtun)")
+	uriLink := flag.String("uri", "", "конфигурационная ссылка (qwdtt:// или wdtt://)")
 
 	flag.Parse()
+
+	// Если передана ссылка qwdtt:// или wdtt:// — парсим параметры из неё
+	rawURI := *uriLink
+	if rawURI == "" && flag.NArg() > 0 {
+		arg0 := flag.Arg(0)
+		if strings.HasPrefix(arg0, "qwdtt://") || strings.HasPrefix(arg0, "wdtt://") {
+			rawURI = arg0
+		}
+	}
+	if rawURI != "" {
+		parsed, err := ParseConfigURI(rawURI)
+		if err != nil {
+			log.Fatalf("[FWDTT] Ошибка разбора URI: %v", err)
+		}
+		log.Printf("[FWDTT] Конфигурация получена из ссылки (%s)", parsed.Name)
+		if parsed.Peer != "" {
+			*peerAddr = parsed.Peer
+		}
+		if parsed.Hashes != "" {
+			*vkHash = parsed.Hashes
+		}
+		if parsed.Password != "" {
+			*connPassword = parsed.Password
+		}
+		if parsed.Workers > 0 {
+			*numW = parsed.Workers
+		}
+		if parsed.Port != "" {
+			*listen = "127.0.0.1:" + parsed.Port
+		}
+	}
 	activeConnMode := strings.ToLower(strings.TrimSpace(*connMode))
 	if activeConnMode != "socks" && activeConnMode != "rawtun" {
 		activeConnMode = "vpn"
@@ -336,29 +368,17 @@ func main() {
 		captchaStatus = "RJS Go v2 with WBV Auto fallback"
 	}
 
-	log.Println("[КЛИЕНТ] ═══════════════════════════════════════")
-	log.Printf("[КЛИЕНТ] VK Creds: 2 stable app_id с циклическим fallback")
-	log.Printf("[КЛИЕНТ] TLS: Chrome 146 fingerprint")
-	log.Printf("[КЛИЕНТ] Воркеров: %d (групп: %d, по %d)", *numW, numGroups, workersPerGroup)
-	log.Printf("[КЛИЕНТ] Хешей: %d", len(hashes))
-	log.Printf("[КЛИЕНТ] Слушаю: %s | Пир: %s", *listen, *peerAddr)
-	if *turnTCP {
-		log.Printf("[КЛИЕНТ] TURN-транспорт: TCP")
-	} else {
-		log.Printf("[КЛИЕНТ] TURN-транспорт: UDP")
-	}
-	log.Printf("[КЛИЕНТ] Режим: %s", activeConnMode)
-	if activeConnMode == "socks" {
-		log.Printf("[КЛИЕНТ] SOCKS5: %s", *socksAddr)
-		if *socksAuth {
-			log.Printf("[КЛИЕНТ] SOCKS5: авторизация по логину и паролю включена")
-		}
-	}
-	log.Printf("[КЛИЕНТ] WRAP: %s", wrapStatus)
-	log.Printf("[WRAP] Ключ выведен из пароля, режим RTP AEAD активен")
-	log.Printf("[КЛИЕНТ] Device ID: %s", *deviceID)
-	log.Printf("[КЛИЕНТ] Captcha: %s", captchaStatus)
-	log.Println("[КЛИЕНТ] ═══════════════════════════════════════")
+	fmt.Println()
+	fmt.Println("    /\\_/\\    FWDTT - Fox WireGuard over TURN Tunnel")
+	fmt.Println("   ( o.o )   Windows Portable Client")
+	fmt.Println("    > ^ <    Ready to protect your connection")
+	fmt.Println()
+	log.Printf("[FWDTT] Режим: %s | Воркеров: %d (групп: %d)", activeConnMode, *numW, numGroups)
+	log.Printf("[FWDTT] Сервер (VPS): %s | Слушатель: %s", *peerAddr, *listen)
+	log.Printf("[FWDTT] VK звонков в пуле: %d", len(hashes))
+	log.Printf("[FWDTT] WRAP защита: %s", wrapStatus)
+	log.Printf("[FWDTT] Режим капчи: %s", captchaStatus)
+	fmt.Println()
 
 	stats := NewStats()
 	shutdownCh := make(chan struct{})

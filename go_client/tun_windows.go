@@ -1,7 +1,7 @@
 //go:build windows
 // +build windows
 
-package main
+package clientengine
 
 import (
 	"bytes"
@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"time"
 
 	"golang.org/x/sys/windows"
@@ -40,6 +41,10 @@ type WindowsTunDevice struct {
 func runCommand(tag, name string, args ...string) error {
 	cmdStr := fmt.Sprintf("%s %s", name, strings.Join(args, " "))
 	cmd := exec.Command(name, args...)
+	cmd.SysProcAttr = &syscall.SysProcAttr{
+		HideWindow:    true,
+		CreationFlags: 0x08000000, // CREATE_NO_WINDOW
+	}
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
@@ -65,7 +70,12 @@ func runCommand(tag, name string, args ...string) error {
 func getDefaultGateway() (string, string, error) {
 	log.Printf("[WINTUN] Поиск физического шлюза по умолчанию...")
 	psScript := `(Get-NetRoute -DestinationPrefix '0.0.0.0/0' | Sort-Object RouteMetric | Select-Object -First 1 | ForEach-Object { "$($_.NextHop)|$($_.InterfaceAlias)" })`
-	out, err := exec.Command("powershell", "-NoProfile", "-Command", psScript).Output()
+	cmd := exec.Command("powershell", "-NoProfile", "-Command", psScript)
+	cmd.SysProcAttr = &syscall.SysProcAttr{
+		HideWindow:    true,
+		CreationFlags: 0x08000000, // CREATE_NO_WINDOW
+	}
+	out, err := cmd.Output()
 	if err != nil {
 		return "", "", fmt.Errorf("PowerShell error: %w", err)
 	}

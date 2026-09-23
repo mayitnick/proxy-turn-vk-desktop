@@ -1,6 +1,6 @@
 # ===== Gradle =====
 .gradle/
-build/
+/build/
 local.properties
 
 # ===== Android =====
@@ -61,6 +61,11 @@ portable_client/config.ini
 portable_client/wg-turn.conf
 portable_client/vk_profile.json
 portable_client/captcha_browser_fp
+client_config.json
+lifetime_stats.json
+gui/build/bin/
+gui/frontend/dist/
+gui/frontend/node_modules/
 *.exe
 *.exe~
 *.zip

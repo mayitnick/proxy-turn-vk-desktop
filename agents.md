@@ -67,7 +67,7 @@
 $env:GOTOOLCHAIN = "local"
 $env:GOSUMDB = "off"
 cd go_client
-go build -ldflags="-s -w" -o "..\portable_client\vk-turn-client.exe" .
+go build -ldflags="-s -w" -o "..\portable_client\vk-turn-client.exe" .\cmd\vk-turn-client
 ```
 
 ---
@@ -80,6 +80,7 @@ portable_client/
  ├── wintun.dll           # 64-битный драйвер WinTUN (рядом с .exe)
  ├── config.ini           # Конфигурационный файл (PEER, PASSWORD, VK_HASH, WORKERS)
  ├── wg-turn.conf         # WireGuard-конфигурация (создается автоматически сервером)
+ ├── fwdtt_gui.py         # Легковесный графический интерфейс (CustomTkinter)
  └── start.bat            # Запуск от имени Администратора
 ```
 
@@ -87,10 +88,13 @@ portable_client/
 
 ## 6. Важные файлы исходного кода
 
+- `go_client/cmd/vk-turn-client/main.go` — точка входа CLI.
+- `go_client/engine.go` — программный интерфейс ядра туннеля (`RunTunnelEngine`) для CLI и Wails GUI.
+- `go_client/link_parser.go` — парсер конфигурационных ссылок `qwdtt://` и `wdtt://`.
 - `go_client/wg_wintun_windows.go` — встроенный движок WireGuard поверх WinTUN для Windows.
 - `go_client/tun_windows.go` — создание адаптера WinTUN, управление сессией, ring buffer (8 МБ), маршруты.
 - `go_client/turn_registry.go` — реестр обнаруженных TURN релеев для динамических исключений.
 - `go_client/pipe.go` — внутренняя реализация in-memory `AsyncPacketPipe` (замена внешней библиотеки `connutil`).
 - `go_client/listen_windows.go` — реализация `SO_REUSEADDR` для Windows через `syscall.Handle`.
 - `go_client/dispatcher.go` — многопоточный диспетчер пакетов и воркеров (адаптирован под `io.ReadWriteCloser`).
-- `go_client/main.go` — точка входа, разбор аргументов, старт воркеров, обработка `RAWCONF` и `GETCONF`.
+- `gui/` — полнофункциональное приложение на Wails v2 (Go + HTML/JS/CSS) с мониторингом трафика в реальном времени, графиками и определением GeoIP.

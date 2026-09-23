@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>FWDTT</title>
+  <link rel="stylesheet" href="./src/style.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+</head>
+<body class="theme-dark">
+  <!-- Пассивный залипательный фон на Canvas -->
+  <canvas id="ambientCanvas"></canvas>
+
+  <div id="app" class="widget-layout">
+
+    <!-- Верхняя компактная панель заголовка -->
+    <header class="widget-header" style="--wails-draggable:drag">
+      <div class="brand-group">
+        <span class="brand-fox">🦊</span>
+        <span class="brand-title">FWDTT</span>
+      </div>
+
+      <div class="header-tools" style="--wails-draggable:no-drag">
+        <button id="btnOpenLogs" class="tool-btn" title="Логи">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 17 10 11 4 5"></polyline><line x1="12" x2="20" y1="19" y2="19"></line></svg>
+          <span id="logBadge" class="log-dot"></span>
+        </button>
+        <button id="btnOpenSettings" class="tool-btn" title="Настройки">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+        </button>
+      </div>
+    </header>
+
+    <!-- Плашка сервера / выбора ноды -->
+    <div class="node-bar-container">
+      <button id="serverPill" class="node-card-btn" title="Сменить / настроить сервер">
+        <div class="node-card-left">
+          <div id="nodeStatusIndicator" class="node-indicator-dot"></div>
+          <div class="node-card-text">
+            <span id="pillServerName" class="node-ip">Основной сервер</span>
+            <span id="pillServerIP" class="node-label">87.232.123.42:56000</span>
+          </div>
+        </div>
+        <div class="node-card-right">
+          <span id="pillPing" class="node-ping-badge">— ms</span>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"></polyline></svg>
+        </div>
+      </button>
+    </div>
+
+    <!-- Предупреждение о правах администратора -->
+    <div id="adminNotice" class="admin-strip">
+      <span>Требуются права Администратора для TUN</span>
+      <button id="btnRelaunchAdmin" class="btn-elevate-action">Перезапустить</button>
+    </div>
+
+    <!-- Центральная зона: Крупная сочная кнопка подключения -->
+    <main class="main-body">
+      <div class="power-stage">
+        <div id="powerShockwave" class="power-shockwave"></div>
+        <div id="powerGlowRing" class="power-glow-aura"></div>
+        <button id="btnPower" class="power-button idle">
+          <svg class="power-svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
+            <path d="M18.36 6.64a9 9 0 1 1-12.73 0"></path>
+            <line x1="12" y1="2" x2="12" y2="12"></line>
+          </svg>
+          <span id="powerTextLabel" class="power-state-label">ОТКЛЮЧЕНО</span>
+        </button>
+      </div>
+
+      <!-- Статус и время сессии -->
+      <div class="connection-meta">
+        <div class="security-row">
+          <span id="summarySecurity" class="security-caption">Соединение не защищено</span>
+          <button id="btnCheckIP" class="btn-refresh" title="Проверить внешний IP">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
+          </button>
+        </div>
+        <div id="uptimeDisplay" class="uptime-badge">00:00:00</div>
+      </div>
+
+      <!-- Ошибка (если возникла) -->
+      <div id="errorRow" class="error-toast" style="display: none;">
+        <span id="errorText"></span>
+      </div>
+    </main>
+
+    <!-- Информативный блок: Карточки показателей внизу -->
+    <footer class="widget-footer">
+      <div class="metric-tiles-grid">
+        <!-- Скорость загрузки и отдачи -->
+        <div class="metric-tile">
+          <div class="tile-label">СКОРОСТЬ</div>
+          <div class="tile-speed-row">
+            <span class="speed-dl">↓ <b id="lblSpeedDown">0.0 B/s</b></span>
+            <span class="speed-ul">↑ <b id="lblSpeedUp">0.0 B/s</b></span>
+          </div>
+        </div>
+
+        <!-- Трафик за сессию и суммарный -->
+        <div class="metric-tile">
+          <div class="tile-label">ТРАФИК</div>
+          <div class="tile-traffic-row">
+            <span>Сессия: <b id="lblSessionTraffic">0.0 B</b></span>
+            <span class="dim-label">Всего: <b id="lblLifetimeTraffic">0.0 B</b></span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Полоска статуса воркеров в самом низу -->
+      <div class="workers-bar">
+        <span class="workers-caption">Воркеры TURN:</span>
+        <span id="lblWorkers" class="workers-badge">0 / 27</span>
+      </div>
+    </footer>
+
+    <!-- Выдвижные модалки Настроек и Логов -->
+    <div id="modalSettings" class="drawer-modal">
+      <div class="drawer-backdrop"></div>
+      <div class="drawer-panel">
+        <div class="drawer-header">
+          <h3>Параметры соединения</h3>
+          <button id="btnCloseSettings" class="btn-drawer-close">&times;</button>
+        </div>
+        <div class="drawer-content">
+          <div class="input-block">
+            <label>Адрес сервера (PEER:PORT)</label>
+            <input type="text" id="inPeer" placeholder="87.232.123.42:56000" />
+          </div>
+
+          <div class="input-block">
+            <label>Пароль подключения</label>
+            <input type="password" id="inPassword" placeholder="Текстовый пароль" />
+          </div>
+
+          <div class="input-block">
+            <label>Ссылка или хеш звонка VK</label>
+            <textarea id="inVkHash" rows="2" placeholder="https://vk.com/call/join/..."></textarea>
+          </div>
+
+          <div class="input-row">
+            <div class="input-block flex-1">
+              <label>Режим</label>
+              <select id="inMode">
+                <option value="vpn">WinTUN (VPN)</option>
+                <option value="socks">SOCKS5 (127.0.0.1:1080)</option>
+              </select>
+            </div>
+            <div class="input-block flex-1">
+              <label>DNS</label>
+              <select id="inDNS">
+                <option value="yandex">Yandex</option>
+                <option value="cloudflare">Cloudflare</option>
+                <option value="google">Google</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="input-block">
+            <div class="range-header">
+              <label>Количество воркеров</label>
+              <span id="workersSliderVal" class="range-val">27</span>
+            </div>
+            <input type="range" id="inWorkers" min="9" max="54" step="9" value="27" />
+          </div>
+
+          <div class="input-check">
+            <input type="checkbox" id="inTurnTCP" />
+            <label for="inTurnTCP">Использовать TCP вместо UDP для TURN</label>
+          </div>
+
+          <div class="drawer-actions">
+            <button id="btnSaveConfig" class="btn-save-action">Сохранить</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Модалка логов -->
+    <div id="modalLogs" class="drawer-modal">
+      <div class="drawer-backdrop"></div>
+      <div class="drawer-panel logs-panel">
+        <div class="drawer-header">
+          <h3>Журнал событий</h3>
+          <div class="drawer-tools">
+            <button id="btnCopyRawLogs" class="btn-mini">Копировать</button>
+            <button id="btnClearRawLogs" class="btn-mini">Очистить</button>
+            <button id="btnCloseLogs" class="btn-drawer-close">&times;</button>
+          </div>
+        </div>
+        <div id="rawLogsConsole" class="terminal-logs">
+          <div class="log-line info">[СИСТЕМА] FWDTT готов к работе</div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <script src="./src/main.js" type="module"></script>
+</body>
+</html>

@@ -15,7 +15,7 @@
 // existed briefly and some deployed servers may still send it — but this
 // client always WRITES the plain 12-byte form.
 
-package main
+package clientengine
 
 import (
 	"crypto/cipher"

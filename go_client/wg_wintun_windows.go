@@ -1,7 +1,7 @@
 //go:build windows
 // +build windows
 
-package main
+package clientengine
 
 import (
 	"context"
@@ -217,12 +217,16 @@ func startWindowsWireGuardTUN(ctx context.Context, conf, peerAddr string) (func(
 		// Заворачиваем интернет в WinTUN интерфейс WireGuard
 		log.Println("[ROUTE] Направление интернета в WinTUN (0.0.0.0/1 и 128.0.0.0/1)...")
 		if tunIfIndex > 0 {
-			_ = runCommand("ROUTE", "route", "add", "0.0.0.0", "mask", "128.0.0.0", clientIP, "IF", strconv.Itoa(tunIfIndex), "metric", "1")
-			_ = runCommand("ROUTE", "route", "add", "128.0.0.0", "mask", "128.0.0.0", clientIP, "IF", strconv.Itoa(tunIfIndex), "metric", "1")
+			// Назначаем нулевой шлюз и абсолютный приоритет metric 1 на WinTUN
+			_ = runCommand("ROUTE", "route", "add", "0.0.0.0", "mask", "128.0.0.0", "0.0.0.0", "IF", strconv.Itoa(tunIfIndex), "metric", "1")
+			_ = runCommand("ROUTE", "route", "add", "128.0.0.0", "mask", "128.0.0.0", "0.0.0.0", "IF", strconv.Itoa(tunIfIndex), "metric", "1")
 		} else {
 			_ = runCommand("ROUTE", "route", "add", "0.0.0.0", "mask", "128.0.0.0", clientIP, "metric", "1")
 			_ = runCommand("ROUTE", "route", "add", "128.0.0.0", "mask", "128.0.0.0", clientIP, "metric", "1")
 		}
+
+		// Выставляем пониженный приоритет на WinTUN интерфейс через netsh
+		_ = runCommand("NETSH", "netsh", "interface", "ipv4", "set", "interface", fmt.Sprintf("%q", tunName), "metric=1")
 	}
 
 	log.Println("[WINTUN-WG] Туннель WinTUN полностью активен! Трафик защищён.")

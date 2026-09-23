@@ -1,0 +1,13 @@
+{
+  "$schema": "https://wails.io/schemas/config.v2.json",
+  "name": "vk-turn-gui",
+  "outputfilename": "vk-turn-desktop",
+  "frontend:install": "npm install",
+  "frontend:build": "npm run build",
+  "frontend:dev:watcher": "npm run dev",
+  "frontend:dev:serverUrl": "auto",
+  "author": {
+    "name": "MayITNick",
+    "email": "123010340+mayitnick@users.noreply.github.com"
+  }
+}
