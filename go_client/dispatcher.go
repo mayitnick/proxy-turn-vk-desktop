@@ -40,43 +40,32 @@ const (
 	prioBuf     = 32
 
 	// maxDwellMS — сколько максимум миллисекунд подряд пакеты одного клиента
-	// идут через один и тот же worker, даже если chunk по счётчику ещё не
-	// закончился. Подстраховка на случай, если конкретный relay начал тормозить:
-	// не ждём весь chunk, переключаемся раньше.
-	maxDwellMS = 15
+	// идут через один и тот же worker.
+	// Поднято с 15 до 80 мс: это защищает от фрагментации потока в играх и звонках
+	// (где пакеты приходят с шагом 20-50 мс), предотвращая джиттер и постоянные разрывы.
+	maxDwellMS = 80
 
-	// prioThreshold — пакеты размером до этого числа байт (в первую очередь
-	// TCP ACK) идут через отдельный приоритетный канал (PrioCh) каждого
-	// worker'а, минуя обычную chunk-очередь. Иначе ACK может застрять за
-	// большим chunk'ом данных на медленном relay, и рост TCP-окна тормозится.
-	prioThreshold = 128
+	// prioThreshold — пакеты размером до этого числа байт (чистые TCP ACK)
+	// идут через отдельный приоритетный канал (PrioCh).
+	// Снижено со 128 до 64: VoIP и игровые UDP-пакеты (обычно 70-130 байт)
+	// больше не разбрасываются хаотично по разным воркерам, ломая порядок следования.
+	prioThreshold = 64
 )
 
 // chunkSizeFor — сколько подряд пакетов такого размера отправлять в один
 // worker, прежде чем переключиться на следующий.
-//
-// Зачем вообще chunk, а не round-robin по одному пакету: при round-robin
-// каждый пакет летит через разный TURN relay с разным latency, что даёт
-// reorder на другой стороне. TCP внутри туннеля интерпретирует reorder как
-// потери → cwnd collapse → скорость single-flow падает до считанных KB/s.
-//
-// Почему размер зависит от размера пакета: крупные пакеты (объёмные данные)
-// разумно группировать покрупнее — меньше переключений relay на мегабайт
-// трафика. Мелкие пакеты (ACK, keepalive) — быстро переключать или вовсе
-// уводить в приоритетный канал (см. prioThreshold), чтобы не накапливать
-// задержку на управляющем трафике.
 func chunkSizeFor(pktSize int) int {
 	switch {
 	case pktSize > 1100:
 		return 64
 	case pktSize >= 701:
-		return 24
+		return 32
 	case pktSize >= 301:
-		return 8
+		return 16
 	case pktSize >= 101:
-		return 3
+		return 8
 	default:
-		return 1
+		return 4
 	}
 }
 
@@ -287,9 +276,11 @@ func (d *Dispatcher) readLoop() {
 		now := time.Now().UnixMilli()
 		lastTime := d.lastPktTime
 		d.lastPktTime = now
-		if lastTime > 0 && now-lastTime > 10 {
-			// Была пауза >10мс — предыдущий chunk уже не даёт выгоды от
+		if lastTime > 0 && now-lastTime > 150 {
+			// Была пауза >150мс — предыдущий chunk уже не даёт выгоды от
 			// affinity, начинаем новый со следующего worker'а.
+			// Значение 150мс сохраняет связность интерактивных пакетов (игры, звонки),
+			// которые отправляются каждые 20-50мс.
 			d.rrIndex = (d.rrIndex + 1) % nw
 			d.rrCount = 0
 			d.chunkStartTs = now
@@ -419,6 +410,7 @@ func (d *Dispatcher) writeLoop() {
 					}
 				}
 				d.stats.TotalBytesDown.Add(int64(len(pkt)))
+				d.stats.LastDownTime.Store(time.Now().Unix())
 				putPktBuf(pkt)
 				continue
 			}
@@ -439,6 +431,7 @@ func (d *Dispatcher) writeLoop() {
 				}
 			}
 			d.stats.TotalBytesDown.Add(int64(len(pkt)))
+			d.stats.LastDownTime.Store(time.Now().Unix())
 			putPktBuf(pkt)
 		}
 	}

@@ -26,10 +26,9 @@ const (
 	readBufSize        = 1600
 	socketBufSize      = 625 * 1024
 	keepaliveByte      = 0xFF // keepalive marker (DTLS-level или прямой obfs-кадр)
-	// keepaliveInterval: 1с (как у референсного клиента) — агрессивнее держит
-	// TURN permission/NAT-маппинг "тёплым" на каждом из 18-108 relay-сокетов
-	// сессии, чем прежние 15с/5с.
-	keepaliveInterval = 10 * time.Second
+	// keepaliveInterval: 5с — надёжно держит NAT-маппинг у провайдеров РФ (Ростелеком, МТС),
+	// предотвращая дроп соединений через 30-40с простоя.
+	keepaliveInterval = 5 * time.Second
 	// keepaliveMinSize/keepaliveMaxSize: keepalive-пакет теперь не
 	// фиксированного размера (было 1 байт постоянно) — случайная длина
 	// 25-44 байта имитирует "тишину" OPUS в реальном звонке; постоянный
@@ -462,8 +461,9 @@ func RunSession(
 	stats.ActiveConnections.Add(1)
 	defer stats.ActiveConnections.Add(-1)
 
-	// Запрос конфига
-	if getConfig && configCh != nil && tp.RawMode {
+	// Запрос конфига: если конфиг ещё не получен, запрашиваем его
+	needConfig := configCh != nil && !stats.ConfigDelivered.Load()
+	if needConfig && tp.RawMode {
 		ip, dnsCSV, mtu, confErr := RequestRawConfig(activeConn, deviceID, password)
 		if confErr != nil {
 			errStr := confErr.Error()
@@ -471,20 +471,23 @@ func RunSession(
 				return false, confErr
 			}
 			log.Printf("[ВОРКЕР #%d] Ошибка RAW-конфига: %v", sessionID, confErr)
+			return false, confErr
 		} else if ip != "" {
 			conf := fmt.Sprintf("RAWCONF:%s|%s|%d", ip, dnsCSV, mtu)
 			select {
 			case configCh <- conf:
 				configDelivered = true
+				stats.ConfigDelivered.Store(true)
 				log.Printf("[ВОРКЕР #%d] RAW-конфиг получен (ip=%s)", sessionID, ip)
 			default:
 				configDelivered = true
+				stats.ConfigDelivered.Store(true)
 				log.Printf("[ВОРКЕР #%d] RAW-конфиг уже был доставлен другим воркером", sessionID)
 			}
 		} else {
-			log.Printf("[ВОРКЕР #%d] Сервер ещё не назначил raw IP, повторим позже", sessionID)
+			return false, fmt.Errorf("сервер ещё не назначил raw IP, повторим позже")
 		}
-	} else if getConfig && configCh != nil {
+	} else if needConfig {
 		conf, confErr := RequestConfig(activeConn, localPort, deviceID, password)
 		if confErr != nil {
 			errStr := confErr.Error()
@@ -492,17 +495,20 @@ func RunSession(
 				return false, confErr
 			}
 			log.Printf("[ВОРКЕР #%d] Ошибка конфига: %v", sessionID, confErr)
+			return false, confErr
 		} else if conf != "" {
 			select {
 			case configCh <- conf:
 				configDelivered = true
-				log.Printf("[ВОРКЕР #%d] Конфиг получен", sessionID)
+				stats.ConfigDelivered.Store(true)
+				log.Printf("[ВОРКЕР #%d] Конфиг WireGuard получен ✓", sessionID)
 			default:
 				configDelivered = true
+				stats.ConfigDelivered.Store(true)
 				log.Printf("[ВОРКЕР #%d] Конфиг уже был доставлен другим воркером", sessionID)
 			}
 		} else {
-			log.Printf("[ВОРКЕР #%d] Сервер ещё не выдал WireGuard-конфиг, повторим позже", sessionID)
+			return false, fmt.Errorf("сервер ещё не выдал WireGuard-конфиг, повторим позже")
 		}
 	} else {
 		if authErr := SendAuth(activeConn, deviceID, password); authErr != nil {
@@ -669,8 +675,8 @@ func RunSession(
 				return
 			}
 
-			// Skip keepalive pong from server
-			if n == 1 && b[0] == keepaliveByte {
+			// Skip keepalive pong from server (начинается с keepaliveByte 0xFF)
+			if n > 0 && b[0] == keepaliveByte {
 				continue
 			}
 

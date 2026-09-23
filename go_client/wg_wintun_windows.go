@@ -216,17 +216,31 @@ func startWindowsWireGuardTUN(ctx context.Context, conf, peerAddr string) (func(
 
 		// Заворачиваем интернет в WinTUN интерфейс WireGuard
 		log.Println("[ROUTE] Направление интернета в WinTUN (0.0.0.0/1 и 128.0.0.0/1)...")
+		// Сначала очищаем возможные старые маршруты от предыдущих сессий
+		_ = runCommand("ROUTE", "route", "delete", "0.0.0.0", "mask", "128.0.0.0")
+		_ = runCommand("ROUTE", "route", "delete", "128.0.0.0", "mask", "128.0.0.0")
+
 		if tunIfIndex > 0 {
-			// Назначаем нулевой шлюз и абсолютный приоритет metric 1 на WinTUN
-			_ = runCommand("ROUTE", "route", "add", "0.0.0.0", "mask", "128.0.0.0", "0.0.0.0", "IF", strconv.Itoa(tunIfIndex), "metric", "1")
-			_ = runCommand("ROUTE", "route", "add", "128.0.0.0", "mask", "128.0.0.0", "0.0.0.0", "IF", strconv.Itoa(tunIfIndex), "metric", "1")
+			_ = runCommand("ROUTE", "route", "add", "0.0.0.0", "mask", "128.0.0.0", clientIP, "IF", strconv.Itoa(tunIfIndex), "metric", "1")
+			_ = runCommand("ROUTE", "route", "add", "128.0.0.0", "mask", "128.0.0.0", clientIP, "IF", strconv.Itoa(tunIfIndex), "metric", "1")
 		} else {
 			_ = runCommand("ROUTE", "route", "add", "0.0.0.0", "mask", "128.0.0.0", clientIP, "metric", "1")
 			_ = runCommand("ROUTE", "route", "add", "128.0.0.0", "mask", "128.0.0.0", clientIP, "metric", "1")
 		}
 
-		// Выставляем пониженный приоритет на WinTUN интерфейс через netsh
+		// Выставляем абсолютный приоритет (metric=1) на WinTUN интерфейс
 		_ = runCommand("NETSH", "netsh", "interface", "ipv4", "set", "interface", fmt.Sprintf("%q", tunName), "metric=1")
+
+		// Монополизация трафика: временно повышаем метрику физического адаптера (IPv4 и IPv6) до 500,
+		// чтобы Windows не маршрутизировала трафик в обход WinTUN через физический шлюз
+		if iface != "" {
+			log.Printf("[ROUTE] Монополизация трафика: выставление метрики 500 на физический интерфейс %q...", iface)
+			_ = runCommand("NETSH", "netsh", "interface", "ipv4", "set", "interface", fmt.Sprintf("%q", iface), "metric=500")
+			_ = runCommand("NETSH", "netsh", "interface", "ipv6", "set", "interface", fmt.Sprintf("%q", iface), "metric=500")
+		}
+
+		// Сбрасываем кэш DNS, чтобы система сразу резолвила через WinTUN DNS
+		_ = runCommand("IPCONFIG", "ipconfig", "/flushdns")
 	}
 
 	log.Println("[WINTUN-WG] Туннель WinTUN полностью активен! Трафик защищён.")
@@ -239,6 +253,11 @@ func startWindowsWireGuardTUN(ctx context.Context, conf, peerAddr string) (func(
 		for _, r := range routesAdded {
 			_ = runCommand("ROUTE", "route", "delete", r)
 		}
+		if iface != "" {
+			_ = runCommand("NETSH", "netsh", "interface", "ipv4", "set", "interface", fmt.Sprintf("%q", iface), "metric=25")
+			_ = runCommand("NETSH", "netsh", "interface", "ipv6", "set", "interface", fmt.Sprintf("%q", iface), "metric=25")
+		}
+		_ = runCommand("IPCONFIG", "ipconfig", "/flushdns")
 		dev.Close()
 		log.Println("[WINTUN-WG] Интерфейс WireGuard WinTUN закрыт.")
 	}

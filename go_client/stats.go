@@ -10,6 +10,9 @@ type Stats struct {
 	TotalBytesUp      atomic.Int64
 	TotalBytesDown    atomic.Int64
 	ActiveConnections atomic.Int32
+	ConfigDelivered   atomic.Bool
+	LastDownTime      atomic.Int64
+	TargetWorkers     atomic.Int32
 }
 
 func NewStats() *Stats {

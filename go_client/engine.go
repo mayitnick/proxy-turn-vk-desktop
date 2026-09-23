@@ -9,6 +9,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"time"
 )
 
 // EngineConfig содержит параметры запуска туннеля через Wails GUI или внешнее API
@@ -178,6 +179,7 @@ func RunTunnelEngine(ctx context.Context, cfg EngineConfig, stats *Stats, logWri
 	if stats == nil {
 		stats = NewStats()
 	}
+	stats.TargetWorkers.Store(int32(numW))
 
 	shutdownCh := make(chan struct{})
 	go func() {
@@ -185,6 +187,7 @@ func RunTunnelEngine(ctx context.Context, cfg EngineConfig, stats *Stats, logWri
 		close(shutdownCh)
 	}()
 	go stats.RunLoop(shutdownCh)
+	go runEngineWatchdog(ctx, stats, numW, cfg.PeerAddr)
 
 	var disp *Dispatcher
 	if activeConnMode == "rawtun" {
@@ -208,6 +211,7 @@ func RunTunnelEngine(ctx context.Context, cfg EngineConfig, stats *Stats, logWri
 			if strings.HasPrefix(rawConf, "RAWCONF:") {
 				parts := strings.Split(strings.TrimPrefix(rawConf, "RAWCONF:"), "|")
 				if len(parts) == 3 {
+					stats.ConfigDelivered.Store(true)
 					ip, dnsCSV, mtuStr := parts[0], parts[1], parts[2]
 					cleanup, err := setupPlatformTUN(ctx, disp, cfg.TunFdSock, ip, dnsCSV, mtuStr, cfg.PeerAddr, tp.Hashes)
 					if err != nil {
@@ -238,6 +242,7 @@ func RunTunnelEngine(ctx context.Context, cfg EngineConfig, stats *Stats, logWri
 			_ = os.WriteFile("wg-turn.conf", []byte(finalConf+"\n"), 0600)
 
 			if activeConnMode == "socks" {
+				stats.ConfigDelivered.Store(true)
 				socksA := cfg.SocksAddr
 				if socksA == "" {
 					socksA = "127.0.0.1:1080"
@@ -252,6 +257,7 @@ func RunTunnelEngine(ctx context.Context, cfg EngineConfig, stats *Stats, logWri
 					log.Printf("[SOCKS] Сервер остановлен: %v", err)
 				}
 			} else if activeConnMode == "vpn" {
+				stats.ConfigDelivered.Store(true)
 				cleanup, err := startWindowsWireGuardTUN(ctx, finalConf, cfg.PeerAddr)
 				if err != nil {
 					log.Printf("[VPN] Ошибка запуска WinTUN WireGuard: %v", err)
@@ -324,4 +330,61 @@ func RunTunnelEngine(ctx context.Context, cfg EngineConfig, stats *Stats, logWri
 	<-configDone
 	log.Println("[КЛИЕНТ] Сессия туннеля остановлена")
 	return nil
+}
+
+// runEngineWatchdog непрерывно отслеживает здоровье туннеля:
+// 1. Неполучение конфига сервера при старте.
+// 2. Ситуацию "0 байт" (туннель якобы поднят, но трафик заблокирован).
+// 3. Недостаток подключенных воркеров (например, 18 или меньше из 27).
+func runEngineWatchdog(ctx context.Context, stats *Stats, numW int, peerAddr string) {
+	ticker := time.NewTicker(3 * time.Second)
+	defer ticker.Stop()
+
+	startTime := time.Now()
+	var alerted0Byte bool
+	var alertedDeficit bool
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			elapsed := time.Since(startTime)
+			activeW := int(stats.ActiveConnections.Load())
+			isConfigDelivered := stats.ConfigDelivered.Load()
+			curDown := stats.TotalBytesDown.Load()
+
+			// 1. Диагностика неполучения конфига (зависание на старте)
+			if !isConfigDelivered && elapsed > 8*time.Second {
+				log.Printf("[САМОДИАГНОСТИКА] [ТРЕВОГА] Конфигурация туннеля не получена за %v! Активно воркеров: %d. Проверьте пароль сервера или сетевую доступность.", elapsed.Round(time.Second), activeW)
+			}
+
+			// 2. Диагностика "0 байт" трафика (туннель поднят, но данные не идут)
+			if isConfigDelivered && elapsed > 10*time.Second {
+				if curDown == 0 {
+					if !alerted0Byte {
+						log.Printf("[САМОДИАГНОСТИКА] [ВНИМАНИЕ] Туннель активен, но принято 0 байт трафика. Запуск проверки и восстановления маршрутизации...")
+						alerted0Byte = true
+						_ = runCommand("IPCONFIG", "ipconfig", "/flushdns")
+					}
+				} else {
+					if alerted0Byte {
+						log.Printf("[САМОДИАГНОСТИКА] [УСПЕХ] Трафик в туннеле пошёл (получено %d байт)! Туннель полностью исправен ✓", curDown)
+						alerted0Byte = false
+					}
+				}
+			}
+
+			// 3. Диагностика просадки воркеров (например, активно 18 или меньше из 27)
+			targetW := numW
+			if targetW > 0 && activeW < (targetW*7)/10 && elapsed > 15*time.Second {
+				if !alertedDeficit {
+					log.Printf("[САМОДИАГНОСТИКА] [ВОССТАНОВЛЕНИЕ] Просадка пула воркеров: активно %d из %d требуемых. Воркеры автоматически обновляют креды и восстанавливают соединения...", activeW, targetW)
+					alertedDeficit = true
+				}
+			} else if activeW >= (targetW*8)/10 {
+				alertedDeficit = false
+			}
+		}
+	}
 }

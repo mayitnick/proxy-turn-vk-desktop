@@ -339,10 +339,23 @@ func (a *App) statsMonitorLoop() {
 				a.currentDown = down
 				a.currentUp = up
 
-				if activeW > 0 && a.state == "connecting" {
+				isConfigDelivered := a.engineStats.ConfigDelivered.Load()
+				if activeW > 0 && isConfigDelivered && a.state == "connecting" {
 					a.state = "connected"
 					a.stateMsg = "Защищено (VK TURN)"
 					go a.fetchExitIP()
+				} else if a.state == "connecting" && activeW > 0 && !isConfigDelivered {
+					a.stateMsg = fmt.Sprintf("Подключение воркеров (%d/%d), запрос IP...", activeW, a.requestedWorkers)
+				}
+
+				if a.state == "connected" {
+					if down == 0 && time.Since(a.sessionStart) > 10*time.Second {
+						a.stateMsg = "Ожидание трафика (0 байт)..."
+					} else if int(activeW) < (a.requestedWorkers*7)/10 {
+						a.stateMsg = fmt.Sprintf("Защищено (воркеров: %d/%d, восстановление...)", activeW, a.requestedWorkers)
+					} else {
+						a.stateMsg = "Защищено (VK TURN)"
+					}
 				}
 			} else {
 				a.downBps = 0

@@ -65,18 +65,28 @@ func WorkerGroup(
 	log.Printf("[ГРУППА #%d] Запрос кредов (хеш: %s...)", groupID, shortHash)
 
 	credStreamID := groupID * 100
-	user, pass, turnURLs, err := GetCreds(ctx, hash, credStreamID)
 	var creds *Credentials
-	if err == nil {
-		creds = &Credentials{User: user, Pass: pass, TurnURLs: turnURLs, CacheStreamID: credStreamID}
-	} else {
-		log.Printf("[ГРУППА #%d] Ошибка кредов: %v", groupID, err)
-		return
+	for {
+		if ctx.Err() != nil {
+			return
+		}
+		user, pass, turnURLs, err := GetCreds(ctx, hash, credStreamID)
+		if err == nil && len(turnURLs) > 0 {
+			creds = &Credentials{User: user, Pass: pass, TurnURLs: turnURLs, CacheStreamID: credStreamID}
+			break
+		}
+		log.Printf("[ГРУППА #%d] Ошибка получения кредов: %v (повтор через 3с...)", groupID, err)
+		select {
+		case <-time.After(3 * time.Second):
+		case <-ctx.Done():
+			return
+		}
+		hashIndex++
+		hash = tp.Hashes[hashIndex%len(tp.Hashes)]
 	}
 
 	log.Printf("[ГРУППА #%d] Креды OK, TURN: %v, %d воркеров", groupID, creds.TurnURLs, len(workerIDs))
 
-	var configRequestInFlight int32
 	var wg sync.WaitGroup
 	var credsMu sync.RWMutex
 	var refreshMu sync.Mutex
@@ -156,12 +166,9 @@ func WorkerGroup(
 					return
 				}
 
-				getConf := false
-				if shouldGetConfig && atomic.LoadInt32(&configSent) == 0 {
-					getConf = atomic.CompareAndSwapInt32(&configRequestInFlight, 0, 1)
-				}
+				// Передаем configCh воркерам, пока конфиг не доставлен в движок
 				var cc chan<- string
-				if getConf {
+				if shouldGetConfig && !stats.ConfigDelivered.Load() {
 					cc = configCh
 				}
 
@@ -171,16 +178,12 @@ func WorkerGroup(
 				credsMu.RUnlock()
 
 				configDelivered, sessErr := RunSession(ctx, tp, peer, d, localPort,
-					getConf, cc, wid, &credsSnapshot, deviceID, password, stats, allocateTicker.C)
+					cc != nil, cc, wid, &credsSnapshot, deviceID, password, stats, allocateTicker.C)
 
 				quotaRetry := false
 				fastRetry := false
-				if getConf {
-					if configDelivered {
-						atomic.StoreInt32(&configSent, 1)
-					} else {
-						atomic.StoreInt32(&configRequestInFlight, 0)
-					}
+				if configDelivered {
+					atomic.StoreInt32(&configSent, 1)
 				}
 
 				if sessErr != nil {
@@ -232,13 +235,14 @@ func WorkerGroup(
 						log.Printf("[ВОРКЕР #%d] Ошибка (попытка %d): %s", wid, attempt, errStr)
 					}
 
-					// Если ошибка STUN (credentials invalid), воркер не сможет переподключиться. Завершаем.
+					// Если ошибка STUN (credentials invalid), обновляем креды и повторяем попытку
 					isStunDeath := strings.Contains(errStrLower, "error 29") ||
 						strings.Contains(errStrLower, "cannot create socket")
 
 					if isStunDeath {
-						log.Printf("[ВОРКЕР #%d] Невосстановимая TURN/STUN ошибка, завершение: %s", wid, errStr)
-						return
+						log.Printf("[ВОРКЕР #%d] Ошибка STUN/сокета (%s). Обновление кредов и рестарт воркера...", wid, errStr)
+						refreshCreds("STUN socket recovery")
+						time.Sleep(2 * time.Second)
 					}
 				}
 

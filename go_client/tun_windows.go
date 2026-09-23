@@ -200,8 +200,20 @@ func OpenWinTUN(tunName, clientIP, dnsCSV string, mtu int, peerAddr string, turn
 		}
 
 		log.Println("[ROUTE] Направление интернета в WinTUN (0.0.0.0/1 и 128.0.0.0/1)...")
-		_ = runCommand("ROUTE", "route", "add", "0.0.0.0", "mask", "128.0.0.0", clientIP, "metric", "5")
-		_ = runCommand("ROUTE", "route", "add", "128.0.0.0", "mask", "128.0.0.0", clientIP, "metric", "5")
+		_ = runCommand("ROUTE", "route", "delete", "0.0.0.0", "mask", "128.0.0.0")
+		_ = runCommand("ROUTE", "route", "delete", "128.0.0.0", "mask", "128.0.0.0")
+		_ = runCommand("ROUTE", "route", "add", "0.0.0.0", "mask", "128.0.0.0", clientIP, "metric", "1")
+		_ = runCommand("ROUTE", "route", "add", "128.0.0.0", "mask", "128.0.0.0", clientIP, "metric", "1")
+
+		// Абсолютный приоритет WinTUN
+		_ = runCommand("NETSH", "netsh", "interface", "ipv4", "set", "interface", fmt.Sprintf("%q", tunName), "metric=1")
+
+		// Монополизация: выставляем метрику 500 на физический интерфейс
+		if dev.gwIface != "" {
+			_ = runCommand("NETSH", "netsh", "interface", "ipv4", "set", "interface", fmt.Sprintf("%q", dev.gwIface), "metric=500")
+			_ = runCommand("NETSH", "netsh", "interface", "ipv6", "set", "interface", fmt.Sprintf("%q", dev.gwIface), "metric=500")
+		}
+		_ = runCommand("IPCONFIG", "ipconfig", "/flushdns")
 	}
 
 	go dev.statsLoop()
@@ -290,6 +302,11 @@ func (d *WindowsTunDevice) Close() error {
 	for _, host := range d.routes {
 		_ = runCommand("ROUTE", "route", "delete", host)
 	}
+	if d.gwIface != "" {
+		_ = runCommand("NETSH", "netsh", "interface", "ipv4", "set", "interface", fmt.Sprintf("%q", d.gwIface), "metric=25")
+		_ = runCommand("NETSH", "netsh", "interface", "ipv6", "set", "interface", fmt.Sprintf("%q", d.gwIface), "metric=25")
+	}
+	_ = runCommand("IPCONFIG", "ipconfig", "/flushdns")
 
 	d.session.End()
 	d.adapter.Close()
