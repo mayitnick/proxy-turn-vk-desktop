@@ -181,6 +181,8 @@ func RunTunnelEngine(ctx context.Context, cfg EngineConfig, stats *Stats, logWri
 	}
 	stats.TargetWorkers.Store(int32(numW))
 
+	var pauseFlag int32
+
 	shutdownCh := make(chan struct{})
 	go func() {
 		<-ctx.Done()
@@ -188,6 +190,7 @@ func RunTunnelEngine(ctx context.Context, cfg EngineConfig, stats *Stats, logWri
 	}()
 	go stats.RunLoop(shutdownCh)
 	go runEngineWatchdog(ctx, stats, numW, cfg.PeerAddr)
+	go RunFoxNetworkWatcher(ctx, &pauseFlag, stats, cfg.PeerAddr)
 
 	var disp *Dispatcher
 	if activeConnMode == "rawtun" {
@@ -271,7 +274,6 @@ func RunTunnelEngine(ctx context.Context, cfg EngineConfig, stats *Stats, logWri
 		}
 	}()
 
-	var pauseFlag int32
 	var wg sync.WaitGroup
 	workerIDCounter := 1
 	var prevWaitReady <-chan struct{}

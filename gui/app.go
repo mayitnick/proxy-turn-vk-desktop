@@ -60,6 +60,7 @@ type GUIStats struct {
 	ExitCountry    string `json:"exit_country"`
 	UptimeSec      int64  `json:"uptime_sec"`
 	LastError      string `json:"last_error"`
+	FoxSleeping    bool   `json:"fox_sleeping"`
 }
 
 // App — бэкенд контроллер Wails
@@ -243,6 +244,11 @@ func (a *App) CheckIP() {
 	go a.fetchExitIP()
 }
 
+// WakeupFox будит спящего лисёнка и принудительно опрашивает сеть
+func (a *App) WakeupFox() {
+	clientengine.WakeupFox()
+}
+
 // GetStats возвращает снимок состояния для реактивного UI
 func (a *App) GetStats() GUIStats {
 	a.mu.Lock()
@@ -271,6 +277,7 @@ func (a *App) GetStats() GUIStats {
 		ExitCountry:    a.exitCountry,
 		UptimeSec:      uptime,
 		LastError:      a.lastError,
+		FoxSleeping:    a.engineStats != nil && a.engineStats.FoxSleeping.Load(),
 	}
 }
 
@@ -340,21 +347,42 @@ func (a *App) statsMonitorLoop() {
 				a.currentUp = up
 
 				isConfigDelivered := a.engineStats.ConfigDelivered.Load()
-				if activeW > 0 && isConfigDelivered && a.state == "connecting" {
-					a.state = "connected"
-					a.stateMsg = "Защищено (VK TURN)"
-					go a.fetchExitIP()
-				} else if a.state == "connecting" && activeW > 0 && !isConfigDelivered {
-					a.stateMsg = fmt.Sprintf("Подключение воркеров (%d/%d), запрос IP...", activeW, a.requestedWorkers)
-				}
+				isSleeping := a.engineStats.FoxSleeping.Load()
 
-				if a.state == "connected" {
-					if down == 0 && time.Since(a.sessionStart) > 10*time.Second {
-						a.stateMsg = "Ожидание трафика (0 байт)..."
-					} else if int(activeW) < (a.requestedWorkers*7)/10 {
-						a.stateMsg = fmt.Sprintf("Защищено (воркеров: %d/%d, восстановление...)", activeW, a.requestedWorkers)
+				if isSleeping {
+					a.state = "sleeping"
+					if msg := a.engineStats.FoxStatusMsg.Load(); msg != nil && *msg != "" {
+						a.stateMsg = *msg
 					} else {
+						a.stateMsg = "Интернета пока не вижу, посплю, пока ты его не включишь... 🦊💤"
+					}
+				} else {
+					if a.state == "sleeping" {
+						if isConfigDelivered && activeW > 0 {
+							a.state = "connected"
+							a.stateMsg = "Защищено (VK TURN)"
+						} else {
+							a.state = "connecting"
+							a.stateMsg = "Восстановление соединения..."
+						}
+					}
+
+					if activeW > 0 && isConfigDelivered && a.state == "connecting" {
+						a.state = "connected"
 						a.stateMsg = "Защищено (VK TURN)"
+						go a.fetchExitIP()
+					} else if a.state == "connecting" && activeW > 0 && !isConfigDelivered {
+						a.stateMsg = fmt.Sprintf("Подключение воркеров (%d/%d), запрос IP...", activeW, a.requestedWorkers)
+					}
+
+					if a.state == "connected" {
+						if down == 0 && time.Since(a.sessionStart) > 10*time.Second {
+							a.stateMsg = "Ожидание трафика (0 байт)..."
+						} else if int(activeW) < (a.requestedWorkers*7)/10 {
+							a.stateMsg = fmt.Sprintf("Защищено (воркеров: %d/%d, восстановление...)", activeW, a.requestedWorkers)
+						} else {
+							a.stateMsg = "Защищено (VK TURN)"
+						}
 					}
 				}
 			} else {

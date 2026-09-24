@@ -17,3 +17,5 @@ export function LoadConfig():Promise<main.AppConfig>;
 export function RelaunchAsAdmin():Promise<void>;
 
 export function SaveConfig(arg1:main.AppConfig):Promise<void>;
+
+export function WakeupFox():Promise<void>;

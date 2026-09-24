@@ -50,6 +50,7 @@ export namespace main {
 	    exit_country: string;
 	    uptime_sec: number;
 	    last_error: string;
+	    fox_sleeping: boolean;
 	
 	    static createFrom(source: any = {}) {
 	        return new GUIStats(source);
@@ -74,6 +75,7 @@ export namespace main {
 	        this.exit_country = source["exit_country"];
 	        this.uptime_sec = source["uptime_sec"];
 	        this.last_error = source["last_error"];
+	        this.fox_sleeping = source["fox_sleeping"];
 	    }
 	}
 

@@ -33,3 +33,7 @@ export function RelaunchAsAdmin() {
 export function SaveConfig(arg1) {
   return window['go']['main']['App']['SaveConfig'](arg1);
 }
+
+export function WakeupFox() {
+  return window['go']['main']['App']['WakeupFox']();
+}

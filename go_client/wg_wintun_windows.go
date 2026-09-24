@@ -178,6 +178,8 @@ func startWindowsWireGuardTUN(ctx context.Context, conf, peerAddr string) (func(
 			"oauth.vk.com",
 			"calls.okcdn.ru",
 			"ok.ru",
+			"77.88.8.8",
+			"77.88.8.1",
 		}
 		log.Printf("[WINTUN-WG] Добавление доменов VK в исключения: %v", vkDomains)
 		targetHosts = append(targetHosts, vkDomains...)
@@ -206,6 +208,7 @@ func startWindowsWireGuardTUN(ctx context.Context, conf, peerAddr string) (func(
 				routesAdded = append(routesAdded, host)
 			}
 		}
+		RegisterActiveRouting(gw, iface, routesAdded)
 
 		// Получаем точный индекс WinTUN интерфейса (IF <ifIndex>) для надёжной маршрутизации
 		tunIfIndex := 0

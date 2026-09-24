@@ -20,6 +20,11 @@ const logBadge = document.getElementById('logBadge');
 const adminNotice = document.getElementById('adminNotice');
 const btnRelaunchAdmin = document.getElementById('btnRelaunchAdmin');
 
+// Fox Sleep Mode
+const foxSleepBanner = document.getElementById('foxSleepBanner');
+const foxSleepText = document.getElementById('foxSleepText');
+const btnWakeupFox = document.getElementById('btnWakeupFox');
+
 // Подвал (статистика)
 const lblSpeedDown = document.getElementById('lblSpeedDown');
 const lblSpeedUp = document.getElementById('lblSpeedUp');
@@ -193,6 +198,15 @@ function setupUIHandlers() {
     }
   });
 
+  // Пробуждение лисёнка
+  if (btnWakeupFox) {
+    btnWakeupFox.addEventListener('click', () => {
+      if (window.go?.main?.App?.WakeupFox) {
+        window.go.main.App.WakeupFox();
+      }
+    });
+  }
+
   // Ползунок воркеров
   inWorkers.addEventListener('input', (e) => {
     workersSliderVal.textContent = e.target.value;
@@ -327,6 +341,13 @@ function updateUI(s) {
     adminNotice.classList.add('show');
   } else {
     adminNotice.classList.remove('show');
+  }
+
+  if (s.fox_sleeping || s.state === 'sleeping') {
+    if (foxSleepBanner) foxSleepBanner.style.display = 'flex';
+    if (foxSleepText && s.state_msg) foxSleepText.textContent = s.state_msg;
+  } else {
+    if (foxSleepBanner) foxSleepBanner.style.display = 'none';
   }
 
   if (s.state === 'connected') {

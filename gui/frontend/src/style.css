@@ -462,6 +462,38 @@ body, html {
   animation: shake 0.3s ease-in-out;
 }
 
+.fox-sleep-toast {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 12px;
+  border-radius: 8px;
+  background: rgba(229, 122, 56, 0.12);
+  border: 1px solid rgba(229, 122, 56, 0.3);
+  font-size: 11px;
+  color: #fbbf24;
+  animation: modal-up 0.3s ease-out;
+}
+
+.btn-wakeup-action {
+  background: #E57A38;
+  color: #ffffff;
+  border: none;
+  border-radius: 5px;
+  padding: 3px 8px;
+  font-size: 10px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.btn-wakeup-action:hover {
+  background: #f08a4b;
+  transform: scale(1.04);
+}
+
 /* Footer: Карточки показателей */
 .widget-footer {
   display: flex;

@@ -13,6 +13,9 @@ type Stats struct {
 	ConfigDelivered   atomic.Bool
 	LastDownTime      atomic.Int64
 	TargetWorkers     atomic.Int32
+	FoxSleeping       atomic.Bool
+	PhysicalOnline    atomic.Bool
+	FoxStatusMsg      atomic.Pointer[string]
 }
 
 func NewStats() *Stats {

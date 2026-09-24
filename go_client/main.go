@@ -138,6 +138,11 @@ func RunCLI() {
 		scanner := bufio.NewScanner(os.Stdin)
 		for scanner.Scan() {
 			line := strings.TrimSpace(scanner.Text())
+			if line == "" || line == "WAKE" || line == "WAKEUP" || line == "FOX" {
+				// Нажатие Enter или ввод команды будит спящего лисёнка
+				WakeupFox()
+				continue
+			}
 			if !strings.Contains(line, "error:tunnel stopped") {
 				log.Printf("[STDIN] %s", line)
 			}
@@ -381,12 +386,15 @@ func RunCLI() {
 	fmt.Println()
 
 	stats := NewStats()
+	stats.TargetWorkers.Store(int32(*numW))
 	shutdownCh := make(chan struct{})
 	go func() {
 		<-ctx.Done()
 		close(shutdownCh)
 	}()
 	go stats.RunLoop(shutdownCh)
+	go runEngineWatchdog(ctx, stats, *numW, *peerAddr)
+	go RunFoxNetworkWatcher(ctx, &pauseFlag, stats, *peerAddr)
 
 	var disp *Dispatcher
 	if activeConnMode == "rawtun" {

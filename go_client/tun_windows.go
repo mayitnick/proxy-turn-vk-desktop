@@ -174,6 +174,9 @@ func OpenWinTUN(tunName, clientIP, dnsCSV string, mtu int, peerAddr string, turn
 			}
 		}
 
+		// Добавляем DNS Яндекса для прямого зондирования сети
+		targetHosts = append(targetHosts, "77.88.8.8", "77.88.8.1")
+
 		seen := make(map[string]bool)
 		for _, host := range targetHosts {
 			host = strings.TrimSpace(host)
@@ -198,6 +201,7 @@ func OpenWinTUN(tunName, clientIP, dnsCSV string, mtu int, peerAddr string, turn
 				dev.routes = append(dev.routes, host)
 			}
 		}
+		RegisterActiveRouting(gw, dev.gwIface, dev.routes)
 
 		log.Println("[ROUTE] Направление интернета в WinTUN (0.0.0.0/1 и 128.0.0.0/1)...")
 		_ = runCommand("ROUTE", "route", "delete", "0.0.0.0", "mask", "128.0.0.0")

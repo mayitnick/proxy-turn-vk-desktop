@@ -166,6 +166,19 @@ func WorkerGroup(
 					return
 				}
 
+				// Если лисёнок спит (оффлайн сети / Wi-Fi отключен), воркеры мирно ждут
+				for atomic.LoadInt32(pauseFlag) != 0 {
+					if ctx.Err() != nil {
+						return
+					}
+					select {
+					case <-WakeupFoxChan:
+					case <-time.After(500 * time.Millisecond):
+					case <-ctx.Done():
+						return
+					}
+				}
+
 				// Передаем configCh воркерам, пока конфиг не доставлен в движок
 				var cc chan<- string
 				if shouldGetConfig && !stats.ConfigDelivered.Load() {
