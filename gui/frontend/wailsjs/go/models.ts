@@ -1,3 +1,34 @@
+export namespace clientengine {
+	
+	export class VKHashCheckResult {
+	    hash: string;
+	    normalized: string;
+	    status: string;
+	    turn_urls: string[];
+	    turn_count: number;
+	    latency_ms: number;
+	    error_message: string;
+	    hint: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new VKHashCheckResult(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.hash = source["hash"];
+	        this.normalized = source["normalized"];
+	        this.status = source["status"];
+	        this.turn_urls = source["turn_urls"];
+	        this.turn_count = source["turn_count"];
+	        this.latency_ms = source["latency_ms"];
+	        this.error_message = source["error_message"];
+	        this.hint = source["hint"];
+	    }
+	}
+
+}
+
 export namespace main {
 	
 	export class AppConfig {
@@ -5,6 +36,7 @@ export namespace main {
 	    peer_addr: string;
 	    password: string;
 	    vk_hash: string;
+	    vk_hashes: string[];
 	    num_workers: number;
 	    conn_mode: string;
 	    socks_addr: string;
@@ -23,6 +55,7 @@ export namespace main {
 	        this.peer_addr = source["peer_addr"];
 	        this.password = source["password"];
 	        this.vk_hash = source["vk_hash"];
+	        this.vk_hashes = source["vk_hashes"];
 	        this.num_workers = source["num_workers"];
 	        this.conn_mode = source["conn_mode"];
 	        this.socks_addr = source["socks_addr"];
@@ -32,6 +65,65 @@ export namespace main {
 	        this.auto_connect = source["auto_connect"];
 	    }
 	}
+	export class DiagStep {
+	    id: string;
+	    title: string;
+	    status: string;
+	    message: string;
+	    hint: string;
+	    latency_ms: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new DiagStep(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.title = source["title"];
+	        this.status = source["status"];
+	        this.message = source["message"];
+	        this.hint = source["hint"];
+	        this.latency_ms = source["latency_ms"];
+	    }
+	}
+	export class DiagReport {
+	    overall_status: string;
+	    timestamp: string;
+	    summary: string;
+	    steps: DiagStep[];
+	
+	    static createFrom(source: any = {}) {
+	        return new DiagReport(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.overall_status = source["overall_status"];
+	        this.timestamp = source["timestamp"];
+	        this.summary = source["summary"];
+	        this.steps = this.convertValues(source["steps"], DiagStep);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	
 	export class GUIStats {
 	    connected: boolean;
 	    is_admin: boolean;

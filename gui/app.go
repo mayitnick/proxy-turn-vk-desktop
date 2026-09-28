@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"syscall"
@@ -21,17 +22,42 @@ import (
 
 // AppConfig — сохраняемые настройки профиля сервера
 type AppConfig struct {
-	ServerName  string `json:"server_name"`
-	PeerAddr    string `json:"peer_addr"`
-	Password    string `json:"password"`
-	VkHash      string `json:"vk_hash"`
-	NumWorkers  int    `json:"num_workers"`
-	ConnMode    string `json:"conn_mode"` // "vpn", "socks"
-	SocksAddr   string `json:"socks_addr"`
-	GoDNS       string `json:"go_dns"`
-	ObfsMode    string `json:"obfs_mode"`
-	TurnTCP     bool   `json:"turn_tcp"`
-	AutoConnect bool   `json:"auto_connect"`
+	ServerName  string   `json:"server_name"`
+	PeerAddr    string   `json:"peer_addr"`
+	Password    string   `json:"password"`
+	VkHash      string   `json:"vk_hash"`
+	VkHashes    []string `json:"vk_hashes"` // до 4 хешей/ссылок
+	NumWorkers  int      `json:"num_workers"`
+	ConnMode    string   `json:"conn_mode"` // "vpn", "socks"
+	SocksAddr   string   `json:"socks_addr"`
+	GoDNS       string   `json:"go_dns"`
+	ObfsMode    string   `json:"obfs_mode"`
+	TurnTCP     bool     `json:"turn_tcp"`
+	AutoConnect bool     `json:"auto_connect"`
+}
+
+// GetAllHashes возвращает объединенный список непустых уникальных хешей
+func (c *AppConfig) GetAllHashes() []string {
+	var list []string
+	seen := make(map[string]struct{})
+	for _, h := range c.VkHashes {
+		trimmed := strings.TrimSpace(h)
+		if trimmed != "" {
+			if _, ok := seen[trimmed]; !ok {
+				seen[trimmed] = struct{}{}
+				list = append(list, trimmed)
+			}
+		}
+	}
+	if len(list) == 0 && c.VkHash != "" {
+		for _, h := range clientengine.ParseHashes(c.VkHash) {
+			if _, ok := seen[h]; !ok {
+				seen[h] = struct{}{}
+				list = append(list, h)
+			}
+		}
+	}
+	return list
 }
 
 // LifetimeStats — статистика за всё время (хранится на диске)
@@ -129,9 +155,24 @@ func (a *App) Connect(cfg AppConfig) error {
 	a.downBps = 0
 	a.upBps = 0
 	a.pingMs = 0
+
+	hashes := cfg.GetAllHashes()
+	if len(hashes) > 0 {
+		cfg.VkHash = strings.Join(hashes, ",")
+	}
+	maxAllowedWorkers := len(hashes) * 27
+	if maxAllowedWorkers == 0 {
+		maxAllowedWorkers = 27
+	}
+	if maxAllowedWorkers > 108 {
+		maxAllowedWorkers = 108
+	}
+
 	a.requestedWorkers = cfg.NumWorkers
 	if a.requestedWorkers <= 0 {
-		a.requestedWorkers = 18
+		a.requestedWorkers = maxAllowedWorkers
+	} else if a.requestedWorkers > maxAllowedWorkers {
+		a.requestedWorkers = maxAllowedWorkers
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -290,6 +331,7 @@ func (a *App) LoadConfig() AppConfig {
 			PeerAddr:   "",
 			Password:   "",
 			VkHash:     "",
+			VkHashes:   []string{"", "", "", ""},
 			NumWorkers: 27,
 			ConnMode:   "vpn",
 			SocksAddr:  "127.0.0.1:1080",
@@ -299,6 +341,19 @@ func (a *App) LoadConfig() AppConfig {
 	}
 	var cfg AppConfig
 	_ = json.Unmarshal(data, &cfg)
+
+	// Инициализируем слоты vk_hashes из vk_hash, если они пусты
+	if len(cfg.VkHashes) == 0 && cfg.VkHash != "" {
+		for _, h := range clientengine.ParseHashes(cfg.VkHash) {
+			if len(cfg.VkHashes) < 4 {
+				cfg.VkHashes = append(cfg.VkHashes, h)
+			}
+		}
+	}
+	for len(cfg.VkHashes) < 4 {
+		cfg.VkHashes = append(cfg.VkHashes, "")
+	}
+
 	if cfg.NumWorkers <= 0 {
 		cfg.NumWorkers = 27
 	}
@@ -310,9 +365,27 @@ func (a *App) LoadConfig() AppConfig {
 
 // SaveConfig сохраняет файл настроек
 func (a *App) SaveConfig(cfg AppConfig) {
+	hashes := cfg.GetAllHashes()
+	if len(hashes) > 0 {
+		cfg.VkHash = strings.Join(hashes, ",")
+	}
 	path := a.getConfigPath()
 	data, _ := json.MarshalIndent(cfg, "", "  ")
 	_ = os.WriteFile(path, data, 0644)
+}
+
+// CheckHash проверяет один конкретный хеш VK
+func (a *App) CheckHash(hash string) *clientengine.VKHashCheckResult {
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	return clientengine.CheckVKCallHash(ctx, hash)
+}
+
+// CheckAllHashes проверяет переданный список хешей
+func (a *App) CheckAllHashes(hashes []string) []*clientengine.VKHashCheckResult {
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	return clientengine.CheckMultipleVKCallHashes(ctx, hashes)
 }
 
 // statsMonitorLoop — ежесекундный фоновый опрос трафика и пинга

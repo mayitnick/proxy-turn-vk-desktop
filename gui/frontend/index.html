@@ -23,6 +23,10 @@
       </div>
 
       <div class="header-tools" style="--wails-draggable:no-drag">
+        <button id="btnOpenDiagnostics" class="tool-btn" title="Селфдоктор / Диагностика">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+          <span id="diagBadge" class="log-dot"></span>
+        </button>
         <button id="btnOpenLogs" class="tool-btn" title="Логи">
           <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 17 10 11 4 5"></polyline><line x1="12" x2="20" y1="19" y2="19"></line></svg>
           <span id="logBadge" class="log-dot"></span>
@@ -142,8 +146,49 @@
           </div>
 
           <div class="input-block">
-            <label>Ссылка или хеш звонка VK</label>
-            <textarea id="inVkHash" rows="2" placeholder="https://vk.com/call/join/..."></textarea>
+            <div class="hashes-header">
+              <label>Ссылки звонков VK (до 4-х хешей)</label>
+              <button id="btnCheckAllHashes" class="btn-text-action" type="button">🩺 Проверить все</button>
+            </div>
+            <div class="hash-slots-list">
+              <div class="hash-slot-item" data-slot="0">
+                <div class="hash-slot-row">
+                  <span class="slot-badge">#1</span>
+                  <input type="text" class="hash-slot-input" id="inVkHash0" placeholder="https://vk.com/call/join/... или хеш #1" />
+                  <span class="slot-dot" id="hashDot0"></span>
+                  <button type="button" class="btn-slot-check" id="btnCheckHash0" title="Проверить хеш #1">Тест</button>
+                </div>
+                <div class="slot-hint-text" id="hashHint0"></div>
+              </div>
+              <div class="hash-slot-item" data-slot="1">
+                <div class="hash-slot-row">
+                  <span class="slot-badge">#2</span>
+                  <input type="text" class="hash-slot-input" id="inVkHash1" placeholder="Ссылка или хеш #2 (опционально)" />
+                  <span class="slot-dot" id="hashDot1"></span>
+                  <button type="button" class="btn-slot-check" id="btnCheckHash1" title="Проверить хеш #2">Тест</button>
+                </div>
+                <div class="slot-hint-text" id="hashHint1"></div>
+              </div>
+              <div class="hash-slot-item" data-slot="2">
+                <div class="hash-slot-row">
+                  <span class="slot-badge">#3</span>
+                  <input type="text" class="hash-slot-input" id="inVkHash2" placeholder="Ссылка или хеш #3 (опционально)" />
+                  <span class="slot-dot" id="hashDot2"></span>
+                  <button type="button" class="btn-slot-check" id="btnCheckHash2" title="Проверить хеш #3">Тест</button>
+                </div>
+                <div class="slot-hint-text" id="hashHint2"></div>
+              </div>
+              <div class="hash-slot-item" data-slot="3">
+                <div class="hash-slot-row">
+                  <span class="slot-badge">#4</span>
+                  <input type="text" class="hash-slot-input" id="inVkHash3" placeholder="Ссылка или хеш #4 (опционально)" />
+                  <span class="slot-dot" id="hashDot3"></span>
+                  <button type="button" class="btn-slot-check" id="btnCheckHash3" title="Проверить хеш #4">Тест</button>
+                </div>
+                <div class="slot-hint-text" id="hashHint3"></div>
+              </div>
+            </div>
+            <span class="input-subnote">💡 По 27 воркеров на каждый активный хеш (до 108 потоков)</span>
           </div>
 
           <div class="input-row">
@@ -169,7 +214,8 @@
               <label>Количество воркеров</label>
               <span id="workersSliderVal" class="range-val">27</span>
             </div>
-            <input type="range" id="inWorkers" min="9" max="54" step="9" value="27" />
+            <input type="range" id="inWorkers" min="9" max="27" step="9" value="27" />
+            <span id="workersCapHint" class="input-subnote">Доступно до 27 воркеров (1 активный хеш)</span>
           </div>
 
           <div class="input-check">
@@ -179,6 +225,40 @@
 
           <div class="drawer-actions">
             <button id="btnSaveConfig" class="btn-save-action">Сохранить</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Модалка Селфдоктора (Диагностика) -->
+    <div id="modalDiagnostics" class="drawer-modal">
+      <div class="drawer-backdrop"></div>
+      <div class="drawer-panel diag-panel">
+        <div class="drawer-header">
+          <div class="diag-header-title">
+            <span class="diag-header-icon">🩺</span>
+            <h3>Селфдоктор / Диагностика</h3>
+          </div>
+          <div class="drawer-tools">
+            <button id="btnRunDiagnostics" class="btn-mini btn-action-pulse">⚡ Проверить</button>
+            <button id="btnCopyDiagReport" class="btn-mini">Копировать</button>
+            <button id="btnCloseDiagnostics" class="btn-drawer-close">&times;</button>
+          </div>
+        </div>
+        <div class="drawer-content diag-content">
+          <div id="diagSummaryCard" class="diag-summary-card status-pending">
+            <div class="summary-top">
+              <span id="diagSummaryIcon" class="summary-icon">🦊</span>
+              <div class="summary-text-group">
+                <h4 id="diagSummaryTitle">Диагностика готова к запуску</h4>
+                <p id="diagSummaryText">Нажмите «⚡ Проверить», чтобы протестировать всю цепочку от Wi-Fi до VPS и получить понятные подсказки.</p>
+              </div>
+            </div>
+            <div id="diagTimestamp" class="summary-time">—</div>
+          </div>
+
+          <div id="diagPipelineContainer" class="pipeline-list">
+            <!-- Шаги диагностики рендерятся через JS -->
           </div>
         </div>
       </div>

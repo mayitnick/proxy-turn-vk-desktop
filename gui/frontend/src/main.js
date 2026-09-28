@@ -1,4 +1,4 @@
-// FWDTT Minimal Controller
+// FWDTT Desktop Controller & Self-Doctor
 import './style.css';
 
 // DOM элементы
@@ -17,6 +17,8 @@ const pillPing = document.getElementById('pillPing');
 const btnOpenSettings = document.getElementById('btnOpenSettings');
 const btnOpenLogs = document.getElementById('btnOpenLogs');
 const logBadge = document.getElementById('logBadge');
+const btnOpenDiagnostics = document.getElementById('btnOpenDiagnostics');
+const diagBadge = document.getElementById('diagBadge');
 const adminNotice = document.getElementById('adminNotice');
 const btnRelaunchAdmin = document.getElementById('btnRelaunchAdmin');
 
@@ -42,15 +44,36 @@ const rawLogsConsole = document.getElementById('rawLogsConsole');
 const btnCopyRawLogs = document.getElementById('btnCopyRawLogs');
 const btnClearRawLogs = document.getElementById('btnClearRawLogs');
 
+// Диагностика (Self-Doctor)
+const modalDiagnostics = document.getElementById('modalDiagnostics');
+const btnCloseDiagnostics = document.getElementById('btnCloseDiagnostics');
+const btnRunDiagnostics = document.getElementById('btnRunDiagnostics');
+const btnCopyDiagReport = document.getElementById('btnCopyDiagReport');
+const diagSummaryCard = document.getElementById('diagSummaryCard');
+const diagSummaryIcon = document.getElementById('diagSummaryIcon');
+const diagSummaryTitle = document.getElementById('diagSummaryTitle');
+const diagSummaryText = document.getElementById('diagSummaryText');
+const diagTimestamp = document.getElementById('diagTimestamp');
+const diagPipelineContainer = document.getElementById('diagPipelineContainer');
+
 // Форма
 const inPeer = document.getElementById('inPeer');
 const inPassword = document.getElementById('inPassword');
-const inVkHash = document.getElementById('inVkHash');
 const inMode = document.getElementById('inMode');
 const inDNS = document.getElementById('inDNS');
 const inWorkers = document.getElementById('inWorkers');
 const workersSliderVal = document.getElementById('workersSliderVal');
+const workersCapHint = document.getElementById('workersCapHint');
 const inTurnTCP = document.getElementById('inTurnTCP');
+const btnCheckAllHashes = document.getElementById('btnCheckAllHashes');
+
+// Слоты хешей (до 4-х шт)
+const hashSlots = [0, 1, 2, 3].map(i => ({
+  input: document.getElementById(`inVkHash${i}`),
+  dot: document.getElementById(`hashDot${i}`),
+  hint: document.getElementById(`hashHint${i}`),
+  btn: document.getElementById(`btnCheckHash${i}`)
+}));
 
 // Состояние
 let isConnected = false;
@@ -59,8 +82,9 @@ let statsTimer = null;
 let logCount = 0;
 let triggerBoom = false;
 let particlesList = [];
+let latestDiagReport = null;
 
-// 1. Пассивный залипательный фон (Ambient Canvas с интерактивным ускорением)
+// 1. Пассивный залипательный фон (Ambient Canvas)
 function initAmbientCanvas() {
   const canvas = document.getElementById('ambientCanvas');
   const ctx = canvas.getContext('2d');
@@ -92,7 +116,6 @@ function initAmbientCanvas() {
 
     if (triggerBoom) {
       triggerBoom = false;
-      // Взрывной разлёт звёздочек от центра кнопки
       const cx = width / 2;
       const cy = height * 0.45;
       for (let p of particlesList) {
@@ -110,7 +133,6 @@ function initAmbientCanvas() {
       p.y += p.vy;
       p.alpha += p.dAlpha;
 
-      // Плавное торможение после разлёта
       if (Math.abs(p.vx) > 0.4) p.vx *= 0.96;
       if (Math.abs(p.vy) > 0.4) p.vy *= 0.96;
 
@@ -153,7 +175,261 @@ function formatUptime(seconds) {
   return `${h}:${m}:${s}`;
 }
 
-// 3. Обработчики интерфейса
+// 3. Динамический расчет лимита воркеров (по 27 на хеш)
+function getActiveHashesList() {
+  return hashSlots
+    .map(s => s.input.value.trim())
+    .filter(val => val.length > 0);
+}
+
+function updateWorkersSliderLimit() {
+  const activeCount = Math.max(1, getActiveHashesList().length);
+  const maxWorkers = Math.min(108, activeCount * 27);
+
+  inWorkers.max = maxWorkers;
+  if (parseInt(inWorkers.value, 10) > maxWorkers) {
+    inWorkers.value = maxWorkers;
+  }
+  workersSliderVal.textContent = inWorkers.value;
+
+  const hashWord = activeCount === 1 ? 'активный хеш' : (activeCount < 5 ? 'активных хеша' : 'хешей');
+  if (workersCapHint) {
+    workersCapHint.textContent = `Доступно до ${maxWorkers} воркеров (${activeCount} ${hashWord})`;
+  }
+}
+
+// 4. Проверка хешей звонков
+async function checkSingleHash(idx) {
+  const slot = hashSlots[idx];
+  if (!slot) return;
+  const val = slot.input.value.trim();
+  if (!val) {
+    slot.dot.className = 'slot-dot';
+    slot.hint.textContent = 'Слот пуст';
+    slot.hint.className = 'slot-hint-text';
+    return;
+  }
+
+  slot.dot.className = 'slot-dot checking';
+  slot.hint.textContent = 'Проверка комнаты звонка...';
+  slot.hint.className = 'slot-hint-text';
+
+  if (!window.go?.main?.App?.CheckHash) {
+    slot.dot.className = 'slot-dot';
+    slot.hint.textContent = 'Wails API не готов';
+    return;
+  }
+
+  try {
+    const res = await window.go.main.App.CheckHash(val);
+    applyHashCheckResultToSlot(slot, res);
+  } catch (err) {
+    slot.dot.className = 'slot-dot expired';
+    slot.hint.textContent = 'Ошибка: ' + err.toString();
+    slot.hint.className = 'slot-hint-text expired';
+  }
+  updateWorkersSliderLimit();
+}
+
+function applyHashCheckResultToSlot(slot, res) {
+  if (!res) return;
+  if (res.status === 'ok') {
+    slot.dot.className = 'slot-dot ok';
+    slot.hint.textContent = `🟢 Активен (${res.turn_count} TURN, ${res.latency_ms} мс)`;
+    slot.hint.className = 'slot-hint-text ok';
+  } else if (res.status === 'expired') {
+    slot.dot.className = 'slot-dot expired';
+    slot.hint.textContent = `🔴 Протух / Комната закрыта (${res.error_message || 'завершён'})`;
+    slot.hint.className = 'slot-hint-text expired';
+  } else if (res.status === 'captcha') {
+    slot.dot.className = 'slot-dot warn';
+    slot.hint.textContent = '🟡 Требуется капча VK';
+    slot.hint.className = 'slot-hint-text warn';
+  } else {
+    slot.dot.className = 'slot-dot expired';
+    slot.hint.textContent = `🔴 ${res.error_message || 'Ошибка'}`;
+    slot.hint.className = 'slot-hint-text expired';
+  }
+}
+
+async function checkAllHashes() {
+  btnCheckAllHashes.disabled = true;
+  btnCheckAllHashes.textContent = '⏳ Проверка...';
+
+  const nonEmpties = hashSlots
+    .map((s, idx) => ({ idx, val: s.input.value.trim() }))
+    .filter(item => item.val.length > 0);
+
+  if (nonEmpties.length === 0) {
+    btnCheckAllHashes.textContent = 'Заполните слоты';
+    setTimeout(() => {
+      btnCheckAllHashes.textContent = '🩺 Проверить все';
+      btnCheckAllHashes.disabled = false;
+    }, 1500);
+    return;
+  }
+
+  nonEmpties.forEach(item => {
+    hashSlots[item.idx].dot.className = 'slot-dot checking';
+    hashSlots[item.idx].hint.textContent = 'Тестирование...';
+    hashSlots[item.idx].hint.className = 'slot-hint-text';
+  });
+
+  try {
+    const rawHashes = nonEmpties.map(item => item.val);
+    if (window.go?.main?.App?.CheckAllHashes) {
+      const results = await window.go.main.App.CheckAllHashes(rawHashes);
+      results.forEach((res, i) => {
+        const slotIdx = nonEmpties[i].idx;
+        applyHashCheckResultToSlot(hashSlots[slotIdx], res);
+      });
+    }
+  } catch (err) {
+    console.error('CheckAllHashes error:', err);
+  } finally {
+    btnCheckAllHashes.textContent = '🩺 Проверить все';
+    btnCheckAllHashes.disabled = false;
+    updateWorkersSliderLimit();
+  }
+}
+
+// 5. Селфдоктор / Запуск диагностики
+async function runFullDiagnostics() {
+  btnRunDiagnostics.disabled = true;
+  btnRunDiagnostics.textContent = '⏳ Анализ...';
+
+  diagSummaryCard.className = 'diag-summary-card status-pending';
+  diagSummaryIcon.textContent = '⏳';
+  diagSummaryTitle.textContent = 'Выполняется самодиагностика...';
+  diagSummaryText.textContent = 'Тестируем физическую сеть, DNS, звонки VK, TURN-релеи, VPS и сквозной выход.';
+  diagTimestamp.textContent = 'В процессе...';
+
+  // Временный скелетон пайплайна
+  diagPipelineContainer.innerHTML = `
+    <div class="pipeline-step-card status-running">
+      <div class="step-header">
+        <div class="step-title-group">
+          <span class="step-status-icon">⏳</span>
+          <span class="step-title-text">Проверка ключевых сетевых узлов и окружения...</span>
+        </div>
+      </div>
+    </div>
+  `;
+
+  if (!window.go?.main?.App?.RunDiagnostics) {
+    btnRunDiagnostics.disabled = false;
+    btnRunDiagnostics.textContent = '⚡ Проверить';
+    return;
+  }
+
+  try {
+    const report = await window.go.main.App.RunDiagnostics();
+    latestDiagReport = report;
+    renderDiagReport(report);
+  } catch (err) {
+    diagSummaryCard.className = 'diag-summary-card status-error';
+    diagSummaryIcon.textContent = '🚨';
+    diagSummaryTitle.textContent = 'Ошибка выполнения диагностики';
+    diagSummaryText.textContent = err.toString();
+  } finally {
+    btnRunDiagnostics.disabled = false;
+    btnRunDiagnostics.textContent = '⚡ Проверить';
+  }
+}
+
+function renderDiagReport(report) {
+  if (!report) return;
+
+  diagSummaryCard.className = `diag-summary-card status-${report.overall_status}`;
+  if (report.overall_status === 'ok') {
+    diagSummaryIcon.textContent = '🦊✨';
+    diagSummaryTitle.textContent = 'Система полностью готова к работе!';
+    diagBadge.classList.remove('active');
+  } else if (report.overall_status === 'warn') {
+    diagSummaryIcon.textContent = '⚠️';
+    diagSummaryTitle.textContent = 'Обнаружены предупреждения';
+    diagBadge.classList.add('active');
+  } else {
+    diagSummaryIcon.textContent = '🚨';
+    diagSummaryTitle.textContent = 'Обнаружены критические проблемы!';
+    diagBadge.classList.add('active');
+  }
+
+  diagSummaryText.textContent = report.summary || 'Результаты проверки узлов:';
+  diagTimestamp.textContent = report.timestamp || '';
+
+  // Рендерим шаги пайплайна
+  diagPipelineContainer.innerHTML = (report.steps || []).map(step => {
+    let icon = '⏳';
+    if (step.status === 'ok') icon = '🟢';
+    else if (step.status === 'warn') icon = '🟡';
+    else if (step.status === 'error') icon = '🔴';
+
+    return `
+      <div class="pipeline-step-card status-${step.status}">
+        <div class="step-header">
+          <div class="step-title-group">
+            <span class="step-status-icon">${icon}</span>
+            <span class="step-title-text">${escapeHTML(step.title)}</span>
+          </div>
+          ${step.latency_ms > 0 ? `<span class="step-latency-badge">${step.latency_ms} ms</span>` : ''}
+        </div>
+        <div class="step-body">
+          <div class="step-message">${escapeHTML(step.message)}</div>
+          ${step.hint ? `
+            <div class="step-hint-box">
+              <span>💡</span>
+              <span>${escapeHTML(step.hint)}</span>
+            </div>
+          ` : ''}
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+function escapeHTML(str) {
+  if (!str) return '';
+  return str.replace(/[&<>'"]/g, tag => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    "'": '&#39;',
+    '"': '&quot;'
+  }[tag] || tag));
+}
+
+function copyDiagReportToClipboard() {
+  if (!latestDiagReport) {
+    navigator.clipboard.writeText('Отчёт диагностики ещё не сформирован. Нажмите «⚡ Проверить».');
+    return;
+  }
+
+  let text = `🩺 [FWDTT SELF-DOCTOR REPORT — ${latestDiagReport.timestamp}]\n`;
+  text += `Статус: ${latestDiagReport.overall_status.toUpperCase()}\n`;
+  text += `Резюме: ${latestDiagReport.summary}\n\n`;
+
+  (latestDiagReport.steps || []).forEach((s, idx) => {
+    const icon = s.status === 'ok' ? '[OK]' : (s.status === 'warn' ? '[WARN]' : '[ERR]');
+    const latency = s.latency_ms > 0 ? ` (${s.latency_ms} ms)` : '';
+    text += `${idx + 1}. ${icon} ${s.title}${latency}\n`;
+    text += `   Сообщение: ${s.message}\n`;
+    if (s.hint) {
+      text += `   💡 Подсказка: ${s.hint}\n`;
+    }
+    text += '\n';
+  });
+
+  navigator.clipboard.writeText(text);
+
+  const prevText = btnCopyDiagReport.textContent;
+  btnCopyDiagReport.textContent = 'Скопировано! ✓';
+  setTimeout(() => {
+    btnCopyDiagReport.textContent = prevText;
+  }, 1800);
+}
+
+// 6. Обработчики интерфейса
 function setupUIHandlers() {
   btnPower.addEventListener('click', handlePowerToggle);
 
@@ -164,6 +440,20 @@ function setupUIHandlers() {
   serverPill.addEventListener('click', openSettings);
   btnCloseSettings.addEventListener('click', closeSettings);
   modalSettings.querySelector('.drawer-backdrop').addEventListener('click', closeSettings);
+
+  // Диагностика (Self-Doctor)
+  const openDiagnostics = () => {
+    modalDiagnostics.classList.add('open');
+    if (!latestDiagReport) {
+      runFullDiagnostics();
+    }
+  };
+  const closeDiagnostics = () => modalDiagnostics.classList.remove('open');
+  btnOpenDiagnostics.addEventListener('click', openDiagnostics);
+  btnCloseDiagnostics.addEventListener('click', closeDiagnostics);
+  btnRunDiagnostics.addEventListener('click', runFullDiagnostics);
+  btnCopyDiagReport.addEventListener('click', copyDiagReportToClipboard);
+  modalDiagnostics.querySelector('.drawer-backdrop').addEventListener('click', closeDiagnostics);
 
   // Логи
   const openLogs = () => {
@@ -183,7 +473,7 @@ function setupUIHandlers() {
     logCount = 0;
   });
 
-  // Проверка IP
+  // Проверка внешнего IP
   btnCheckIP.addEventListener('click', () => {
     summarySecurity.textContent = 'Определение внешнего IP...';
     if (window.go?.main?.App?.CheckIP) {
@@ -207,6 +497,18 @@ function setupUIHandlers() {
     });
   }
 
+  // Слоты хешей: события
+  hashSlots.forEach((slot, idx) => {
+    slot.input.addEventListener('input', () => {
+      slot.dot.className = 'slot-dot';
+      slot.hint.textContent = '';
+      updateWorkersSliderLimit();
+    });
+    slot.btn.addEventListener('click', () => checkSingleHash(idx));
+  });
+
+  btnCheckAllHashes.addEventListener('click', checkAllHashes);
+
   // Ползунок воркеров
   inWorkers.addEventListener('input', (e) => {
     workersSliderVal.textContent = e.target.value;
@@ -224,10 +526,14 @@ function setupUIHandlers() {
 }
 
 function collectFormConfig() {
+  const hashes = hashSlots.map(s => s.input.value.trim());
+  const activeHashes = hashes.filter(h => h.length > 0);
+
   return {
     peer_addr: inPeer.value.trim(),
     password: inPassword.value.trim(),
-    vk_hash: inVkHash.value.trim(),
+    vk_hash: activeHashes.join(','),
+    vk_hashes: hashes,
     num_workers: parseInt(inWorkers.value, 10) || 27,
     conn_mode: inMode.value || 'vpn',
     socks_addr: '127.0.0.1:1080',
@@ -238,7 +544,7 @@ function collectFormConfig() {
   };
 }
 
-// 4. Подключение и отключение
+// 7. Подключение и отключение
 async function handlePowerToggle() {
   if (isConnecting) return;
 
@@ -249,7 +555,9 @@ async function handlePowerToggle() {
     }
   } else {
     const cfg = collectFormConfig();
-    if (!cfg.peer_addr || !cfg.password || !cfg.vk_hash) {
+    const activeHashes = cfg.vk_hashes.filter(h => h.length > 0);
+
+    if (!cfg.peer_addr || !cfg.password || activeHashes.length === 0) {
       modalSettings.classList.add('open');
       return;
     }
@@ -283,13 +591,13 @@ function setConnectedUI(country, ip) {
   btnPower.className = 'power-button connected';
   powerTextLabel.textContent = 'ПОДКЛЮЧЕНО';
 
-  // Тот самый ВЗРЫВНОЙ ЭФФЕКТ: разлёт частиц и ударная волна!
+  // Разлёт частичек и ударная волна
   if (wasNotConnected) {
     triggerBoom = true;
     const shockwave = document.getElementById('powerShockwave');
     if (shockwave) {
       shockwave.classList.remove('trigger');
-      void shockwave.offsetWidth; // сброс reflow
+      void shockwave.offsetWidth;
       shockwave.classList.add('trigger');
     }
   }
@@ -322,7 +630,7 @@ function setDisconnectedUI(err) {
   }
 }
 
-// 5. Опрос состояния
+// 8. Опрос состояния
 function startStatsLoop() {
   if (statsTimer) clearInterval(statsTimer);
   statsTimer = setInterval(async () => {
@@ -367,7 +675,7 @@ function updateUI(s) {
   lblLifetimeTraffic.textContent = formatBytes(s.lifetime_down + s.lifetime_up);
 }
 
-// 6. Логи
+// 9. Логи
 function setupLogStream() {
   if (window.runtime?.EventsOn) {
     window.runtime.EventsOn('log_entry', (msg) => {
@@ -399,7 +707,7 @@ function appendLog(text) {
   rawLogsConsole.scrollTop = rawLogsConsole.scrollHeight;
 }
 
-// Загрузка сохранённого конфига
+// 10. Загрузка сохранённого конфига
 async function loadSavedConfig() {
   if (!window.go?.main?.App?.LoadConfig) return;
   try {
@@ -407,15 +715,37 @@ async function loadSavedConfig() {
     if (cfg) {
       inPeer.value = cfg.peer_addr || '';
       inPassword.value = cfg.password || '';
-      inVkHash.value = cfg.vk_hash || '';
+
+      // Заполняем слоты хешей
+      const hashes = cfg.vk_hashes || [];
+      hashSlots.forEach((slot, i) => {
+        slot.input.value = hashes[i] || '';
+        slot.dot.className = 'slot-dot';
+        slot.hint.textContent = '';
+      });
+
+      // Если массив слотов был пуст, но есть vk_hash
+      if (hashes.length === 0 && cfg.vk_hash) {
+        const parts = cfg.vk_hash.split(/[,;\s]+/).filter(Boolean);
+        parts.slice(0, 4).forEach((h, i) => {
+          if (hashSlots[i]) hashSlots[i].input.value = h;
+        });
+      }
+
       inMode.value = cfg.conn_mode || 'vpn';
       inDNS.value = cfg.go_dns || 'yandex';
-      inWorkers.value = cfg.num_workers || 27;
-      workersSliderVal.textContent = inWorkers.value;
       inTurnTCP.checked = !!cfg.turn_tcp;
       if (cfg.peer_addr) pillServerIP.textContent = cfg.peer_addr;
+
+      updateWorkersSliderLimit();
+      if (cfg.num_workers) {
+        inWorkers.value = cfg.num_workers;
+        workersSliderVal.textContent = inWorkers.value;
+      }
     }
-  } catch (e) {}
+  } catch (e) {
+    console.error('loadSavedConfig error:', e);
+  }
 }
 
 document.addEventListener('DOMContentLoaded', async () => {

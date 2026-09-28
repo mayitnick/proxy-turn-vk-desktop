@@ -67,6 +67,11 @@ func runCommand(tag, name string, args ...string) error {
 	return nil
 }
 
+// GetDefaultGateway возвращает физический шлюз по умолчанию и имя интерфейса
+func GetDefaultGateway() (string, string, error) {
+	return getDefaultGateway()
+}
+
 func getDefaultGateway() (string, string, error) {
 	log.Printf("[WINTUN] Поиск физического шлюза по умолчанию...")
 	psScript := `(Get-NetRoute -DestinationPrefix '0.0.0.0/0' | Sort-Object RouteMetric | Select-Object -First 1 | ForEach-Object { "$($_.NextHop)|$($_.InterfaceAlias)" })`

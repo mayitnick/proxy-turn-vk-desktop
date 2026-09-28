@@ -6,6 +6,14 @@ export function CheckAdmin() {
   return window['go']['main']['App']['CheckAdmin']();
 }
 
+export function CheckAllHashes(arg1) {
+  return window['go']['main']['App']['CheckAllHashes'](arg1);
+}
+
+export function CheckHash(arg1) {
+  return window['go']['main']['App']['CheckHash'](arg1);
+}
+
 export function CheckIP() {
   return window['go']['main']['App']['CheckIP']();
 }
@@ -28,6 +36,10 @@ export function LoadConfig() {
 
 export function RelaunchAsAdmin() {
   return window['go']['main']['App']['RelaunchAsAdmin']();
+}
+
+export function RunDiagnostics() {
+  return window['go']['main']['App']['RunDiagnostics']();
 }
 
 export function SaveConfig(arg1) {
